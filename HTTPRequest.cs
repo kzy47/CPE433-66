@@ -5,147 +5,103 @@ using System.Text.RegularExpressions;
 
 namespace DNWS
 {
-  public class HTTPRequest
-  {
-    protected String _url;
-    protected String _filename;
-    protected static Dictionary<String, String> _propertyListDictionary = null;
-    protected static Dictionary<String, String> _requestListDictionary = null;
-
-    protected String _body;
-
-    protected int _status;
-
-    protected String _method;
-
-    public String Url
+    public class HTTPRequest
     {
-      get { return _url;}
-    }
+        protected string _url;
+        protected string _filename;
+        protected Dictionary<string, string> _propertyListDictionary;
+        protected Dictionary<string, string> _requestListDictionary;
+        protected string _body;
+        protected int _status;
+        protected string _method;
 
-    public String Filename
-    {
-      get { return _filename;}
-    }
+        public string Url => _url;
+        public string Filename => _filename;
+        public string Body => _body;
+        public int Status => _status;
+        public string Method => _method;
 
-    public String Body
-    {
-      get {return _body;}
-    }
-
-    public int Status
-    {
-      get {return _status;}
-    }
-
-    public String Method
-    {
-      get {return _method;}
-    }
-    public HTTPRequest(String request)
-    {
-      _propertyListDictionary = new Dictionary<String, String>();
-      String[] lines = Regex.Split(request, "\\n");
-
-      if(lines.Length == 0) {
-        _status = 500;
-        return;
-      }
-
-      String[] statusLine = Regex.Split(lines[0], "\\s");
-      if(statusLine.Length != 4) { // too short something is wrong
-        _status = 401;
-        return;
-      }
-      if (!statusLine[0].ToLower().Equals("get"))
-      {
-        _method = "GET";
-      } else if(!statusLine[0].ToLower().Equals("post")) {
-        _method = "POST";
-      } else {
-        _status = 501;
-        return;
-      }
-      _status = 200;
-
-      _url = statusLine[1];
-      String[] urls = Regex.Split(_url, "/");
-      _filename = urls[urls.Length - 1];
-      String[] parts = Regex.Split(_filename, "[?]");
-      if (parts.Length > 1 && parts[1].Contains('&'))
-      {
-        //Ref: http://stackoverflow.com/a/4982122
-        _requestListDictionary = parts[1].Split('&').Select(x => x.Split('=')).ToDictionary(x => x[0].ToLower(), x => x[1]);
-      } else{
-        _requestListDictionary = new Dictionary<String, String>();
-      }
-
-      if(lines.Length == 1) return;
-
-    //   for(int i = 1; i != lines.Length; i++) {
-    //     String[] pair = Regex.Split(lines[i], ": "); //FIXME
-    //     if(pair.Length == 0) continue;
-    //     if(pair.Length == 1) { // handle post body
-    //       if(pair[0].Length > 1) { //FIXME, this is a quick hack
-    //         Dictionary<String, String> _bodys = pair[0].Split('&').Select(x => x.Split('=')).ToDictionary(x => x[0].ToLower(), x => x[1]);
-    //         _requestListDictionary = _requestListDictionary.Concat(_bodys).ToDictionary(x=>x.Key, x=>x.Value);
-    //       }
-    //     } else { // Length == 2, GET url request
-    //       addProperty(pair[0], pair[1]);
-    //     }
-    //   }
-    // }
-
-      for (int i = 1; i < lines.Length; i++){
-        int index = lines[i].IndexOf(": ");
-        string[] pair;
-        if (index > 0) {
-            pair = new string[] { lines[i].Substring(0, index), lines[i].Substring(index + 2) };
-        }
-        else
+        public HTTPRequest(string request)
         {
-            pair = new string[] { lines[i] };
-        }
-        if (_method == "POST" && pair.Length == 1)
-        {
-        var bodyParams = pair[0].Split('&')
-            .Select(x => x.Split('='))
-            .ToDictionary(x => Uri.UnescapeDataString(x[0].ToLower()), x => Uri.UnescapeDataString(x[1]));
-        _requestListDictionary = _requestListDictionary.Concat(bodyParams).ToDictionary(x => x.Key, x => x.Value);
-        }
-        else if (pair.Length == 2)
-        {
-            AddProperty(pair[0], pair[1]);
-        }
-      }
-    }
+            _propertyListDictionary = new Dictionary<string, string>();
+            _requestListDictionary = new Dictionary<string, string>();
 
+            string[] lines = request.Split('\n');
 
-    
-    public String getPropertyByKey(String key)
-    {
-      if(_propertyListDictionary.ContainsKey(key.ToLower())) {
-        return _propertyListDictionary[key.ToLower()];
-      } else {
-        return null;
-      }
-    }
-    public String getRequestByKey(String key)
-    {
-      if(_requestListDictionary.ContainsKey(key.ToLower())) {
-        return _requestListDictionary[key.ToLower()];
-      } else {
-        return null;
-      }
-    }
+            if (lines.Length == 0)
+            {
+                _status = 500;
+                return;
+            }
 
-    public void addProperty(String key, String value)
-    {
-      _propertyListDictionary[key.ToLower()] = value;
+            string[] statusLine = lines[0].Trim().Split(' ');
+
+            if (statusLine.Length < 2)
+            {
+                _status = 400; // Bad Request
+                return;
+            }
+
+            _method = statusLine[0].ToUpper();
+            _url = statusLine[1];
+
+            if (_method != "GET" && _method != "POST")
+            {
+                _status = 501; // Not Implemented
+                return;
+            }
+
+            _status = 200;
+            _filename = _url.Split('/').Last();
+
+            if (_filename.Contains("?"))
+            {
+                string[] parts = _filename.Split('?');
+                _filename = parts[0];
+
+                if (parts.Length > 1)
+                {
+                    _requestListDictionary = parts[1]
+                        .Split('&')
+                        .Where(p => p.Contains("="))
+                        .Select(p => p.Split('='))
+                        .ToDictionary(kv => kv[0].ToLower(), kv => kv.Length > 1 ? kv[1] : "");
+                }
+            }
+
+            // Process headers and body
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+
+                int index = line.IndexOf(": ");
+                if (index > 0)
+                {
+                    string key = line.Substring(0, index).ToLower();
+                    string value = line.Substring(index + 2);
+                    _propertyListDictionary[key] = value;
+                }
+                else if (_method == "POST")
+                {
+                    // Body Parameters (for POST)
+                    var bodyParams = line
+                        .Split('&')
+                        .Where(p => p.Contains("="))
+                        .Select(p => p.Split('='))
+                        .ToDictionary(kv => Uri.UnescapeDataString(kv[0].ToLower()), kv => kv.Length > 1 ? Uri.UnescapeDataString(kv[1]) : "");
+
+                    _requestListDictionary = _requestListDictionary.Concat(bodyParams).ToDictionary(x => x.Key, x => x.Value);
+                }
+            }
+        }
+
+        public string getPropertyByKey(string key) => _propertyListDictionary.TryGetValue(key.ToLower(), out string value) ? value : null;
+
+        public string getRequestByKey(string key) => _requestListDictionary.TryGetValue(key.ToLower(), out string value) ? value : null;
+
+        public void AddProperty(string key, string value) => _propertyListDictionary[key.ToLower()] = value;
+
+        public void AddRequest(string key, string value) => _requestListDictionary[key.ToLower()] = value;
     }
-    public void addRequest(String key, String value)
-    {
-      _requestListDictionary[key.ToLower()] = value;
-    }
-  }
 }
